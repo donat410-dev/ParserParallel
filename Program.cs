@@ -25,7 +25,7 @@ else
 }
 
 Console.Write("Введитете глубину обхода от 0 до 2: ");
-if (!IsCorrect(Console.ReadLine(),out var deepWalk,0,2))
+if (!IsCorrect(Console.ReadLine(), out var deepWalk, 0, 2))
 {
     deepWalk = 1;
 }
@@ -51,7 +51,8 @@ bool IsCorrect(string? arg, out int numb, int lf = 0, int rt = int.MaxValue - 1)
 
 void RunParser()
 {
-    while (true)
+    // если глубина больше текущей то повторям обход
+    while (deepWalk > 0)
     {
         var tempBag = new ConcurrentBag<string>(readyToVisit);
         readyToVisit.Clear();
@@ -60,14 +61,7 @@ void RunParser()
 
         tempBag.Clear();
 
-        // если глубина больше текущей то повторям обход
-        if (deepWalk > 0)
-        {
-            deepWalk--;
-            continue;
-        }
-
-        break;
+        deepWalk--;
     }
 }
 
