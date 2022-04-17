@@ -1,67 +1,61 @@
 ﻿using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 
-const string defUrl = "https://mail.ru";
 const string hrefPattern = @"href\s*=\s*(?:[""'](?<1>[^""']*)[""']|(?<1>\S+))";
 
-ConcurrentBag<string> visitedUrl = new();
+ConcurrentBag<string> resourceUrl = new();
+ConcurrentBag<string> readyToVisitUrl = new();
 ConcurrentBag<string> errorUrl = new();
-ConcurrentBag<string> readyToVisit = new();
+ConcurrentBag<string> outerUrl = new();
+List<Task> tempUrl = new();
 HttpClient httpClient = new();
-
+string domain;
 string[] fileType = {".js", ".pdf", ".jpg", ".png", ".gif", ".css", ".jpeg"};
 
 var fileTypePattern = new Regex(string.Join("|", fileType.Select(Regex.Escape)));
 
 Console.Write("Введите URL: ");
-var url = Console.ReadLine();
-if (url is not null && url.Contains('.') && url.Length >= 3)
+var urlConsole = Console.ReadLine();
+if (urlConsole!.Contains('.') && urlConsole.Length > 3 && urlConsole[0] != '.' && urlConsole[^1] != '.')
 {
-    readyToVisit.Add(url);
+    domain = new Regex(@"(?<=^|\.|\/\/)[a-z0-9\-\.]+\.[0-9a-z]+(?=\/|$)").Matches(urlConsole)[0].Value;
+
+    domain = domain.Replace("www.", "");
+
+    readyToVisitUrl.Add(urlConsole);
 }
 else
 {
-    readyToVisit.Add(defUrl);
+    Console.WriteLine("Вы не ввели URL!");
+    Console.ReadKey();
+    return;
 }
 
-Console.Write("Введитете глубину обхода от 0 до 2: ");
-if (!IsCorrect(Console.ReadLine(), out var deepWalk, 0, 2))
-{
-    deepWalk = 1;
-}
 
 RunParser();
 
+Console.WriteLine($"Страницы ресурса: {resourceUrl.Count}");
+Console.WriteLine($"Ссылrи на внешние ресурсы: {outerUrl.Count}");
 Console.WriteLine($"Ссылок с непрошедшими запросами: {errorUrl.Count}");
-Console.WriteLine($"Посещенные ссылки: {visitedUrl.Count}");
-Console.WriteLine($"Ссылrи готовые к посещению: {readyToVisit.Count}");
 
 Console.Write("Отобразить полученные ссылки? (y/n): ");
 
-if (Console.ReadLine() == "y")
+if (Console.ReadLine()!.Contains('y'))
 {
     ShowInfo();
 }
 
-bool IsCorrect(string? arg, out int numb, int lf = 0, int rt = int.MaxValue - 1)
-{
-    if (!int.TryParse(arg, out numb)) return false;
-    return numb >= lf && numb <= rt;
-}
-
 void RunParser()
 {
-    // если глубина больше текущей то повторям обход
-    while (deepWalk > 0)
+    while (!readyToVisitUrl.IsEmpty)
     {
-        var tempBag = new ConcurrentBag<string>(readyToVisit);
-        readyToVisit.Clear();
+        while (readyToVisitUrl.TryTake(out var url))
+        {
+            tempUrl.Add(Task.Run(() => GetUrlAsync(url)));
+        }
 
-        Task.WaitAll(tempBag.Select(GetUrlAsync).ToArray());
-
-        tempBag.Clear();
-
-        deepWalk--;
+        Task.WaitAll(tempUrl.ToArray());
+        tempUrl.Clear();
     }
 }
 
@@ -71,12 +65,11 @@ async Task GetUrlAsync(string url)
     {
         var html = await httpClient.GetStringAsync(url);
 
-        visitedUrl.Add(url);
-
+        resourceUrl.Add(url);
         // ищем ссылки
         var m = Regex.Match(html, hrefPattern,
             RegexOptions.IgnoreCase | RegexOptions.Compiled,
-            TimeSpan.FromSeconds(1));
+            TimeSpan.FromSeconds(2));
 
         while (m.Success)
         {
@@ -84,9 +77,23 @@ async Task GetUrlAsync(string url)
 
             // различные ограничения
             if (tmpUrl.IndexOf("http", StringComparison.Ordinal) == 0)
+            {
                 if (!fileTypePattern.IsMatch(tmpUrl))
-                    if (!visitedUrl.Contains(tmpUrl) && !readyToVisit.Contains(tmpUrl))
-                        readyToVisit.Add(tmpUrl);
+                {
+                    if (!resourceUrl.Contains(tmpUrl) && !readyToVisitUrl.Contains(tmpUrl) &&
+                        !outerUrl.Contains(tmpUrl))
+                    {
+                        if (tmpUrl.Contains(domain))
+                        {
+                            readyToVisitUrl.Add(tmpUrl);
+                        }
+                        else
+                        {
+                            outerUrl.Add(tmpUrl);
+                        }
+                    }
+                }
+            }
 
             m = m.NextMatch();
         }
@@ -99,18 +106,18 @@ async Task GetUrlAsync(string url)
 
 void ShowInfo()
 {
-    if (errorUrl.IsEmpty)
-    {
-        Console.WriteLine("errorUrl:");
-        foreach (var item in errorUrl)
-            Console.WriteLine($"->{item}");
-    }
-
-    Console.WriteLine("visitedUrl:");
-    foreach (var item in visitedUrl)
+    Console.WriteLine("Все страницы ресурса:");
+    foreach (var item in resourceUrl)
         Console.WriteLine($"->{item}");
 
-    Console.WriteLine("readyToVisit:");
-    foreach (var item in readyToVisit)
+
+    Console.WriteLine("Внешние URL:");
+    foreach (var item in outerUrl)
+        Console.WriteLine($"->{item}");
+
+
+    if (errorUrl.IsEmpty) return;
+    Console.WriteLine("Непрошедшие запросы:");
+    foreach (var item in errorUrl)
         Console.WriteLine($"->{item}");
 }
