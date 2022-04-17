@@ -1,7 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 
-const string hrefPattern = @"href\s*=\s*(?:[""'](?<1>[^""']*)[""']|(?<1>\S+))";
+const string hrefPattern = @"href\s*=\s*(?:[""'](?<1>[^""']*)[""']|(?<1>[^>\s]+))";
 
 ConcurrentBag<string> resourceUrl = new();
 ConcurrentBag<string> readyToVisitUrl = new();
@@ -10,18 +10,16 @@ ConcurrentBag<string> outerUrl = new();
 List<Task> tempUrl = new();
 HttpClient httpClient = new();
 string domain;
-string[] fileType = {".js", ".pdf", ".jpg", ".png", ".gif", ".css", ".jpeg"};
+string[] fileType = {".js", ".pdf", ".jpg", ".png", ".gif", ".css", ".jpeg", ".xml"};
 
 var fileTypePattern = new Regex(string.Join("|", fileType.Select(Regex.Escape)));
 
 Console.Write("Введите URL: ");
 var urlConsole = Console.ReadLine();
-if (urlConsole!.Contains('.') && urlConsole.Length > 3 && urlConsole[0] != '.' && urlConsole[^1] != '.')
+if (Uri.IsWellFormedUriString(urlConsole, UriKind.Absolute))
 {
-    domain = new Regex(@"(?<=^|\.|\/\/)[a-z0-9\-\.]+\.[0-9a-z]+(?=\/|$)").Matches(urlConsole)[0].Value;
-
+    domain = new Regex(@"(?<=\/)[a-z0-9\-\.]+\.[0-9a-z]+(?=\/|$)").Matches(urlConsole)[0].Value;
     domain = domain.Replace("www.", "");
-
     readyToVisitUrl.Add(urlConsole);
 }
 else
@@ -30,7 +28,6 @@ else
     Console.ReadKey();
     return;
 }
-
 
 RunParser();
 
@@ -43,6 +40,7 @@ Console.Write("Отобразить полученные ссылки? (y/n): ")
 if (Console.ReadLine()!.Contains('y'))
 {
     ShowInfo();
+    Console.ReadKey();
 }
 
 void RunParser()
@@ -68,29 +66,24 @@ async Task GetUrlAsync(string url)
         resourceUrl.Add(url);
         // ищем ссылки
         var m = Regex.Match(html, hrefPattern,
-            RegexOptions.IgnoreCase | RegexOptions.Compiled,
-            TimeSpan.FromSeconds(2));
+            RegexOptions.Compiled,
+            TimeSpan.FromSeconds(5));
 
         while (m.Success)
         {
             var tmpUrl = $"{m.Groups[1]}";
+            if (tmpUrl[0] == '/') tmpUrl = "https://" + domain + tmpUrl;
 
             // различные ограничения
-            if (tmpUrl.IndexOf("http", StringComparison.Ordinal) == 0)
+            if (Uri.IsWellFormedUriString(tmpUrl, UriKind.Absolute))
             {
                 if (!fileTypePattern.IsMatch(tmpUrl))
                 {
                     if (!resourceUrl.Contains(tmpUrl) && !readyToVisitUrl.Contains(tmpUrl) &&
                         !outerUrl.Contains(tmpUrl))
                     {
-                        if (tmpUrl.Contains(domain))
-                        {
-                            readyToVisitUrl.Add(tmpUrl);
-                        }
-                        else
-                        {
-                            outerUrl.Add(tmpUrl);
-                        }
+                        if (tmpUrl.Contains(domain)) readyToVisitUrl.Add(tmpUrl);
+                        else outerUrl.Add(tmpUrl);
                     }
                 }
             }
@@ -110,11 +103,9 @@ void ShowInfo()
     foreach (var item in resourceUrl)
         Console.WriteLine($"->{item}");
 
-
     Console.WriteLine("Внешние URL:");
     foreach (var item in outerUrl)
         Console.WriteLine($"->{item}");
-
 
     if (errorUrl.IsEmpty) return;
     Console.WriteLine("Непрошедшие запросы:");
