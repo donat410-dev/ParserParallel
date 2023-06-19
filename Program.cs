@@ -10,7 +10,7 @@ ConcurrentBag<string> outerUrl = new();
 List<Task> tempUrl = new();
 HttpClient httpClient = new();
 string domain;
-string[] fileType = {".js", ".pdf", ".jpg", ".png", ".gif", ".css", ".jpeg", ".xml"};
+string[] fileType = { ".js", ".pdf", ".jpg", ".png", ".gif", ".css", ".jpeg", ".xml" };
 
 var fileTypePattern = new Regex(string.Join("|", fileType.Select(Regex.Escape)));
 
@@ -32,7 +32,7 @@ else
 RunParser();
 
 Console.WriteLine($"Страницы ресурса: {resourceUrl.Count}");
-Console.WriteLine($"Ссылrи на внешние ресурсы: {outerUrl.Count}");
+Console.WriteLine($"Ссылки на внешние ресурсы: {outerUrl.Count}");
 Console.WriteLine($"Ссылок с непрошедшими запросами: {errorUrl.Count}");
 
 Console.Write("Отобразить полученные ссылки? (y/n): ");
